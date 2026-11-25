@@ -28,6 +28,10 @@ private:
  float _idle_omega{400.f};
  float _spool_seconds{5.f};
  bool _run_requested{false};
+ bool _dvt_enabled{false};
+ float _dvt_push_test{0.f};
+ bool _dvt_ramp_enabled{false};
+ float _dvt_pusher_output{0.f};
  bool _config_valid{false};
  bool _armed_last{false};
  bool _allow_run{false};

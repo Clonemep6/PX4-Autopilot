@@ -44,6 +44,13 @@ void ActuatorEffectivenessDualVtol::updateParams()
   _dvt_enabled=true;
   _dvt_push_test=dvt_command;
  }
+ // Optional rate-limited pusher commissioning mode. Invalid commands fail closed.
+ _dvt_ramp_enabled=false;
+ int32_t ramp_enable=0;
+ const param_t ramp_param=param_find("DVT_RAMP_EN");
+ if(ramp_param!=PARAM_INVALID && param_get(ramp_param,&ramp_enable)==0 && ramp_enable==1){
+  _dvt_ramp_enabled=true;
+ }
  _cfg.omega_max=readFloat("DVH_OMEGA_MAX",1000.f);
  _cfg.arm_l=readFloat("DVH_ARM_L",1.33714025f);
  _cfg.arm_r=readFloat("DVH_ARM_R",1.33695575f);
@@ -161,13 +168,14 @@ void ActuatorEffectivenessDualVtol::updateSetpoint(const matrix::Vector<float,NU
   _allow_run=_run_requested && _config_valid;
   _arm_time=now;_previous={};
  }
- if(!armed){_allow_run=false;_arm_time=0;_previous={};}
+ if(!armed){_allow_run=false;_arm_time=0;_previous={};_dvt_pusher_output=0.f;}
  _armed_last=armed;
  // Disabling RUN stops automatic output immediately; re-enable only after disarming.
  if(!_run_requested){_allow_run=false;}
  bool finite=true;for(int i=0;i<NUM_AXES;i++){finite=finite && std::isfinite(request(i));}
  if(!armed || !_allow_run || !_config_valid || !finite
     || _status.vehicle_type!=vehicle_status_s::VEHICLE_TYPE_ROTARY_WING){
+  _dvt_pusher_output=0.f;
   putResidual(request,{});return;
  }
  const float elapsed=now>=_arm_time ? float(now-_arm_time)*1e-6f : 0.f;
@@ -212,8 +220,16 @@ void ActuatorEffectivenessDualVtol::updateSetpoint(const matrix::Vector<float,NU
  _previous=result.controls;
  out(0)=dvh::bound(dvh::omegaForThrust(_previous[0]*tmax)/_cfg.omega_max,0.f,1.f);
  out(1)=dvh::bound(dvh::omegaForThrust(_previous[1]*tmax)/_cfg.omega_max,0.f,1.f);
- // Only allow pusher output after the existing arming/spool/safety checks.
- out(2)=(_dvt_enabled && _dvt_push_test>0.f) ? _dvt_push_test : 0.f;
+ // SITL-only pusher commissioning. Ramping never changes hover allocation.
+ // The pusher remains inhibited until normal hover spool-up completes.
+ const float pusher_target=_dvt_enabled ? _dvt_push_test : 0.f;
+ if(_dvt_ramp_enabled){
+  const float max_delta=0.03f*dvh::bound(dt,0.f,0.1f); // 0.03 normalized units/s
+  _dvt_pusher_output+=dvh::bound(pusher_target-_dvt_pusher_output,-max_delta,max_delta);
+ }else{
+  _dvt_pusher_output=pusher_target;
+ }
+ out(2)=dvh::bound(_dvt_pusher_output,0.f,0.15f);
  out(3+3)=_previous[4];out(3+6)=_previous[4];
  out(3+5)=(_cfg.tilt_trim[0]+_previous[2]*_cfg.tilt_limit)/(dvh::pi/2.f);
  out(3+7)=(_cfg.tilt_trim[1]+_previous[3]*_cfg.tilt_limit)/(dvh::pi/2.f);

@@ -52,6 +52,18 @@ parameters:
             max: 0.15
             decimal: 3
             default: 0
+        DVT_RAMP_EN:
+            description:
+                short: Enable slow pusher commissioning ramp (SITL only)
+                long: |
+                  Opt-in 0.03 normalized units per second slew for DVT_PUSH_TEST.
+                  Requires DVT_EN and normal hover safety gates. No transition
+                  state machine, position-mode override, or wing handover.
+            type: enum
+            values:
+                0: Disabled
+                1: Enabled
+            default: 0
         DVH_OMEGA_MAX:
             description:
                 short: VTOL maximum commanded shaft speed
