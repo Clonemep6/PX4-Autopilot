@@ -27,10 +27,23 @@ void ActuatorEffectivenessDualVtol::updateParams()
  _config_valid=true;
  _run_requested=readInt("DVH_RUN",0)==1;
  // Opt-in SITL pusher commissioning only; never changes hover allocation.
- _dvt_enabled=readInt("DVT_EN",0)==1;
- _dvt_push_test=readFloat("DVT_PUSH_TEST",0.f);
- _config_valid=_config_valid && std::isfinite(_dvt_push_test)
-  && _dvt_push_test>=0.f && _dvt_push_test<=0.15f;
+ // Commissioning parameters are optional and must never invalidate hover wiring.
+ // An invalid pusher request fails closed for the pusher ONLY.
+ _dvt_enabled=false;
+ _dvt_push_test=0.f;
+ int32_t dvt_enable=0;
+ float dvt_command=0.f;
+ const param_t enable_param=param_find("DVT_EN");
+ const param_t command_param=param_find("DVT_PUSH_TEST");
+ const bool enable_readable=enable_param!=PARAM_INVALID
+  && param_get(enable_param,&dvt_enable)==0;
+ const bool command_readable=command_param!=PARAM_INVALID
+  && param_get(command_param,&dvt_command)==0;
+ if(enable_readable && command_readable && dvt_enable==1
+    && std::isfinite(dvt_command) && dvt_command>=0.f && dvt_command<=0.15f){
+  _dvt_enabled=true;
+  _dvt_push_test=dvt_command;
+ }
  _cfg.omega_max=readFloat("DVH_OMEGA_MAX",1000.f);
  _cfg.arm_l=readFloat("DVH_ARM_L",1.33714025f);
  _cfg.arm_r=readFloat("DVH_ARM_R",1.33695575f);
