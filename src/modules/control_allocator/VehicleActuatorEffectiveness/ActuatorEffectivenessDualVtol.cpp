@@ -26,6 +26,11 @@ void ActuatorEffectivenessDualVtol::updateParams()
  ModuleParams::updateParams();
  _config_valid=true;
  _run_requested=readInt("DVH_RUN",0)==1;
+ // Opt-in SITL pusher commissioning only; never changes hover allocation.
+ _dvt_enabled=readInt("DVT_EN",0)==1;
+ _dvt_push_test=readFloat("DVT_PUSH_TEST",0.f);
+ _config_valid=_config_valid && std::isfinite(_dvt_push_test)
+  && _dvt_push_test>=0.f && _dvt_push_test<=0.15f;
  _cfg.omega_max=readFloat("DVH_OMEGA_MAX",1000.f);
  _cfg.arm_l=readFloat("DVH_ARM_L",1.33714025f);
  _cfg.arm_r=readFloat("DVH_ARM_R",1.33695575f);
@@ -194,7 +199,8 @@ void ActuatorEffectivenessDualVtol::updateSetpoint(const matrix::Vector<float,NU
  _previous=result.controls;
  out(0)=dvh::bound(dvh::omegaForThrust(_previous[0]*tmax)/_cfg.omega_max,0.f,1.f);
  out(1)=dvh::bound(dvh::omegaForThrust(_previous[1]*tmax)/_cfg.omega_max,0.f,1.f);
- out(2)=0.f;
+ // Only allow pusher output after the existing arming/spool/safety checks.
+ out(2)=(_dvt_enabled && _dvt_push_test>0.f) ? _dvt_push_test : 0.f;
  out(3+3)=_previous[4];out(3+6)=_previous[4];
  out(3+5)=(_cfg.tilt_trim[0]+_previous[2]*_cfg.tilt_limit)/(dvh::pi/2.f);
  out(3+7)=(_cfg.tilt_trim[1]+_previous[3]*_cfg.tilt_limit)/(dvh::pi/2.f);

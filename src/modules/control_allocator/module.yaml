@@ -30,6 +30,28 @@ parameters:
                 0: Disabled
                 1: Enabled
             default: 0
+        DVT_EN:
+            description:
+                short: Enable dual VTOL pusher commissioning in SITL
+                long: |
+                  Experimental pusher-only test gate. Defaults off. Does not implement transition.
+                  Requires existing DVH_RUN arming and spool safety conditions.
+            type: enum
+            values:
+                0: Disabled
+                1: Enabled
+            default: 0
+        DVT_PUSH_TEST:
+            description:
+                short: Dual VTOL pusher commissioning command
+                long: |
+                  SITL only. Normalized rear-pusher command, limited to 0.15.
+                  Set to zero before disarming. No airspeed or altitude protections.
+            type: float
+            min: 0
+            max: 0.15
+            decimal: 3
+            default: 0
         DVH_OMEGA_MAX:
             description:
                 short: VTOL maximum commanded shaft speed
