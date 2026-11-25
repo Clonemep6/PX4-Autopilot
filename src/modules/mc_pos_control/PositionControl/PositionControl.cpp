@@ -41,6 +41,7 @@
 #include <mathlib/mathlib.h>
 #include <px4_platform_common/defines.h>
 #include <geo/geo.h>
+#include <lib/dual_vtol_hover/DualVtolHoverMath.hpp>
 
 using namespace matrix;
 
@@ -152,6 +153,10 @@ void PositionControl::_velocityControl(const float dt)
 	// No control input from setpoints or corresponding states which are NAN
 	ControlMath::addIfNotNanVector3f(_acc_sp, acc_sp_velocity);
 
+	// Keep the unconstrained request for horizontal anti-windup. The actual
+	// thrust-vector limit is applied in _accelerationControl() below.
+	const Vector2f acc_sp_xy_unconstrained(_acc_sp);
+
 	_accelerationControl();
 
 	// Integrator anti-windup in vertical direction
@@ -191,11 +196,9 @@ void PositionControl::_velocityControl(const float dt)
 
 	// The produced acceleration can be greater or smaller than the desired acceleration due to the saturations and the actual vertical thrust (computed independently).
 	// The ARW loop needs to run if the signal is saturated only.
-	if (_acc_sp.xy().norm_squared() > acc_sp_xy_produced.norm_squared()) {
+	if (acc_sp_xy_unconstrained.norm_squared() > acc_sp_xy_produced.norm_squared()) {
 		const float arw_gain = 2.f / _gain_vel_p(0);
-		const Vector2f acc_sp_xy = _acc_sp.xy();
-
-		vel_error.xy() = Vector2f(vel_error) - arw_gain * (acc_sp_xy - acc_sp_xy_produced);
+		vel_error.xy() = Vector2f(vel_error) - arw_gain * (acc_sp_xy_unconstrained - acc_sp_xy_produced);
 	}
 
 	// Make sure integral doesn't get NAN
@@ -212,6 +215,22 @@ void PositionControl::_accelerationControl()
 	if (!_decouple_horizontal_and_vertical_acceleration) {
 		// Include vertical acceleration setpoint for better horizontal acceleration tracking
 		z_specific_force += _acc_sp(2);
+	}
+
+	// The dual-VTOL hover allocator can only generate horizontal acceleration
+	// by tilting the rotor thrust vector. Bound the acceleration request here,
+	// after the velocity-feedback term has been added, so that the final
+	// attitude/thrust setpoint is physically consistent with the active tilt
+	// limit. The unconstrained request is retained by _velocityControl() for
+	// tracking anti-windup.
+	if (_dual_vtol_hover && PX4_ISFINITE(_lim_tilt) && PX4_ISFINITE(z_specific_force)) {
+		const float max_acc_xy = fabsf(z_specific_force) * tanf(_lim_tilt);
+		const Vector2f acc_sp_xy(_acc_sp);
+		const float acc_sp_xy_norm = acc_sp_xy.norm();
+
+		if (PX4_ISFINITE(max_acc_xy) && PX4_ISFINITE(acc_sp_xy_norm) && acc_sp_xy_norm > max_acc_xy) {
+			_acc_sp.xy() = acc_sp_xy * (max_acc_xy / acc_sp_xy_norm);
+		}
 	}
 
 	Vector3f body_z = Vector3f(-_acc_sp(0), -_acc_sp(1), -z_specific_force).normalized();
@@ -268,6 +287,27 @@ void PositionControl::getLocalPositionSetpoint(vehicle_local_position_setpoint_s
 
 void PositionControl::getAttitudeSetpoint(vehicle_attitude_setpoint_s &attitude_setpoint) const
 {
+	if (_dual_vtol_hover) {
+		// Dual-VTOL hover uses common-mode nacelle tilt for longitudinal translation.
+		// Keep fuselage pitch level so cyclic pitch remains dedicated to attitude
+		// stabilization. Lateral force is still generated with body roll because the
+		// nacelles only tilt about the aircraft pitch axis.
+		const dvh::Split split = dvh::splitForce(_thr_sp(0), _thr_sp(1), _thr_sp(2), _yaw_sp);
+
+		const Quatf q_d{Eulerf(split.roll, 0.f, _yaw_sp)};
+		q_d.copyTo(attitude_setpoint.q_d);
+
+		// The attitude controller forwards this 3-D body thrust vector to the control
+		// allocator. Body-X is produced by symmetric nacelle tilt; body-Z is collective.
+		// splitForce() increases |fz| for lateral roll so altitude is preserved. The
+		// nonlinear allocator similarly increases rotor thrust when satisfying fx/fz.
+		attitude_setpoint.thrust_body[0] = split.fx;
+		attitude_setpoint.thrust_body[1] = 0.f;
+		attitude_setpoint.thrust_body[2] = split.fz;
+		attitude_setpoint.yaw_sp_move_rate = _yawspeed_sp;
+		return;
+	}
+
 	ControlMath::thrustToAttitude(_thr_sp, _yaw_sp, attitude_setpoint);
 	attitude_setpoint.yaw_sp_move_rate = _yawspeed_sp;
 }

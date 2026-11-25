@@ -151,11 +151,15 @@ protected:
 	matrix::Vector3f _land_position;
 	WaypointType _type_previous{WaypointType::idle}; /**< Previous type of current target triplet. */
 	bool _is_emergency_braking_active{false};
+	bool _emergency_braking_vertical{false}; /**< true if emergency braking also needs to stop vertical motion */
 	float _emergency_braking_best_speed{0.f}; /**< lowest speed reached since braking was activated */
 	hrt_abstime _emergency_braking_progress_timestamp{}; /**< last time the braking was still slowing down */
 	bool _want_takeoff{false};
 
 	DEFINE_PARAMETERS_CUSTOM_PARENT(FlightTask,
+					(ParamInt<px4::params::DVH_EN>) _param_dvh_en,
+					(ParamInt<px4::params::CA_AIRFRAME>) _param_ca_airframe,
+					(ParamFloat<px4::params::DVH_POS_TILT>) _param_dvh_pos_tilt,
 					(ParamFloat<px4::params::MPC_XY_CRUISE>) _param_mpc_xy_cruise,
 					(ParamFloat<px4::params::NAV_MC_ALT_RAD>)
 					_param_nav_mc_alt_rad, //vertical acceptance radius at which waypoints are updated

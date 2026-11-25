@@ -245,7 +245,11 @@ ControlAllocator::update_effectiveness_source()
 			break;
 
 		case EffectivenessSource::CUSTOM:
-			tmp = new ActuatorEffectivenessCustom(this);
+			if (_param_dvh_en.get() == 1) {
+				tmp = new ActuatorEffectivenessDualVtol(this);
+			} else {
+				tmp = new ActuatorEffectivenessCustom(this);
+			}
 			break;
 
 		case EffectivenessSource::HELICOPTER_TAIL_ESC:

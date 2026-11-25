@@ -77,6 +77,7 @@ class PositionControl
 public:
 
 	PositionControl() = default;
+	void setDualVtolHover(bool enabled, float limit) { _dual_vtol_hover = enabled; _dual_tilt_limit = limit; }
 	~PositionControl() = default;
 
 	/**
@@ -118,7 +119,7 @@ public:
 	 * Set the maximum tilt angle in radians the output attitude is allowed to have
 	 * @param tilt angle in radians from level orientation
 	 */
-	void setTiltLimit(const float tilt) { _lim_tilt = tilt; }
+	void setTiltLimit(const float tilt) { _lim_tilt = _dual_vtol_hover ? math::min(tilt, _dual_tilt_limit) : tilt; }
 
 	/**
 	 * Set the normalized hover thrust
@@ -191,6 +192,8 @@ public:
 	static const trajectory_setpoint_s empty_trajectory_setpoint;
 
 private:
+	bool _dual_vtol_hover{false};
+	float _dual_tilt_limit{0.0872664626f};
 	// The range limits of the hover thrust configuration/estimate
 	static constexpr float HOVER_THRUST_MIN = 0.1f;
 	static constexpr float HOVER_THRUST_MAX = 0.9f;

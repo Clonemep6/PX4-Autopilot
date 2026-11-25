@@ -82,6 +82,7 @@ void MulticopterPositionControl::parameters_update(bool force)
 
 		// update parameters from storage
 		ModuleParams::updateParams();
+		_control.setDualVtolHover(_param_dvh_en.get() == 1 && _param_dvh_ca_airframe.get() == 9, math::radians(_param_dvh_pos_tilt.get()));
 
 		float sample_freq_hz = 1.f / _sample_interval_s.mean();
 

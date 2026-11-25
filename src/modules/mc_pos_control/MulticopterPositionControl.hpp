@@ -142,6 +142,9 @@ private:
 	};
 
 	DEFINE_PARAMETERS(
+		(ParamInt<px4::params::DVH_EN>) _param_dvh_en,
+		(ParamFloat<px4::params::DVH_POS_TILT>) _param_dvh_pos_tilt,
+		(ParamInt<px4::params::CA_AIRFRAME>) _param_dvh_ca_airframe,
 		// Position Control
 		(ParamFloat<px4::params::MPC_XY_P>)         _param_mpc_xy_p,
 		(ParamFloat<px4::params::MPC_Z_P>)          _param_mpc_z_p,

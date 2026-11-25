@@ -127,3 +127,6 @@ px4_add_romfs_files(
 
 	# [22000, 22999] Reserve for custom models
 )
+
+# Experimental dual VTOL hover SITL airframe
+px4_add_romfs_files(4500_gz_my_vtol)

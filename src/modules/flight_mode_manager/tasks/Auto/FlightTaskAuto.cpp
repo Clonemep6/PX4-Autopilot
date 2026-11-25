@@ -78,6 +78,7 @@ bool FlightTaskAuto::activate(const trajectory_setpoint_s &last_setpoint)
 
 	_updateTrajConstraints();
 	_is_emergency_braking_active = false;
+	_emergency_braking_vertical = false;
 	_time_last_cruise_speed_override = 0;
 	_lock_position_xy.setNaN();
 
@@ -194,6 +195,15 @@ bool FlightTaskAuto::update()
 	}
 
 	_checkEmergencyBraking();
+
+	// Keep a slow, controlled descent during horizontal-only emergency braking in AUTO_LAND.
+	// This avoids an indefinite hover if XY speed remains above the normal limit. Once XY speed
+	// falls below the release threshold, _prepareLandSetpoints() resumes the normal landing rate.
+	if (_type == WaypointType::land && _is_emergency_braking_active && !_emergency_braking_vertical
+	    && PX4_ISFINITE(_velocity_setpoint(2))) {
+		_velocity_setpoint(2) = math::min(_velocity_setpoint(2), _param_mpc_land_crwl.get());
+	}
+
 	Vector3f waypoints[] = {_triplet_previous, _position_setpoint, _triplet_next};
 
 	if (_type == WaypointType::position && _hasPassedCurrentWaypoint()) {
@@ -208,14 +218,19 @@ bool FlightTaskAuto::update()
 
 	const bool should_wait_for_yaw_align = _param_mpc_yaw_mode.get() == int32_t(yaw_mode::towards_waypoint_yaw_first)
 					       && !_yaw_sp_aligned;
-	const bool force_zero_velocity_setpoint = should_wait_for_yaw_align || _is_emergency_braking_active;
+	const bool preserve_vertical_trajectory_during_braking =
+			(_type == WaypointType::land || _type == WaypointType::takeoff)
+			&& _is_emergency_braking_active && !_emergency_braking_vertical;
+
+	// Horizontal emergency braking must not suppress the active vertical trajectory during either
+	// AUTO_LAND (positive-NED descent) or AUTO_TAKEOFF (negative-NED climb).
+	const bool force_zero_velocity_setpoint = (should_wait_for_yaw_align && _type != WaypointType::land)
+			|| (_is_emergency_braking_active && !preserve_vertical_trajectory_during_braking);
 	_updateTrajConstraints();
 
-	if (_is_emergency_braking_active) {
-		// Keep the trajectory position on the vehicle so the position error doesn't get corrected at
-		// the expense of the braking feedforward.
-		_position_smoothing.forceSetPosition(_position);
-	}
+	// Emergency braking seeds the smoother position once when braking activates.
+	// Do not continuously overwrite it with the measured vehicle position here:
+	// doing so makes the smoothed position setpoint chase a runaway aircraft.
 
 	PositionSmoothing::PositionSmoothingSetpoints smoothed_setpoints;
 	_position_smoothing.generateSetpoints(
@@ -743,27 +758,51 @@ void FlightTaskAuto::_checkEmergencyBraking()
 		// taken against what guidance can actually reach or a downdraft would trigger braking mid-mission.
 		const float max_speed_down = math::max(_param_mpc_z_vel_max_dn.get(), 1.2f * _param_mpc_z_v_auto_dn.get());
 		const bool is_vertical_speed_exceeded = (speed_down > factor * max_speed_down)
-							|| (speed_up > factor * _param_mpc_z_vel_max_up.get());
+						    || (speed_up > factor * _param_mpc_z_vel_max_up.get());
 		const bool is_horizontal_speed_exceeded = speed_horizontal > (factor * _param_mpc_xy_vel_max.get());
 
-		if (is_vertical_speed_exceeded || is_horizontal_speed_exceeded) {
-			_is_emergency_braking_active = true;
-			// Start the braking ramp from the vehicle not the reference.
-			_position_smoothing.forceSetVelocity(_velocity);
+		// During an AUTO takeoff, never let emergency braking take ownership of the Z trajectory.
+		// The vehicle can initially move down while the rotors spool and thrust builds. Seeding the
+		// smoother from that positive-NED (downward) velocity/position turns the takeoff trajectory
+		// into a descent. Keep the normal takeoff Z target/ramp authoritative and only allow the
+		// emergency-braking path to act on XY during a takeoff waypoint.
+		const bool takeoff_vertical_braking_inhibited = _type == WaypointType::takeoff;
+		const bool brake_vertical = is_vertical_speed_exceeded && !takeoff_vertical_braking_inhibited;
 
-			_emergency_braking_best_speed = math::max(fabsf(_velocity(2)), Vector2f(_velocity).norm());
+		if (brake_vertical || is_horizontal_speed_exceeded) {
+			_is_emergency_braking_active = true;
+			// If AUTO_LAND only needs horizontal braking, do not reset or suppress its vertical descent.
+			// AUTO takeoff likewise keeps its normal negative-NED climb trajectory.
+			_emergency_braking_vertical = brake_vertical;
+
+			if ((_type == WaypointType::land || _type == WaypointType::takeoff) && !_emergency_braking_vertical) {
+				// Horizontal-only braking: preserve the task's Z trajectory. This is required for both
+				// landing descent and takeoff climb.
+				_position_smoothing.forceSetVelocity({_velocity(0), _velocity(1), NAN});
+				_position_smoothing.forceSetPosition({_position(0), _position(1), NAN});
+				_emergency_braking_best_speed = Vector2f(_velocity).norm();
+			} else {
+				_position_smoothing.forceSetVelocity(_velocity);
+				_position_smoothing.forceSetPosition(_position);
+				_emergency_braking_best_speed = math::max(fabsf(_velocity(2)), Vector2f(_velocity).norm());
+			}
+
 			_emergency_braking_progress_timestamp = _time_stamp_current;
 		}
 
 	} else {
-		// Deactivate emergency braking once slow enough for ordinary guidance to finish the stop.
-		// Check the measured velocity since the trajectory reaches zero well before the vehicle does.
-		const bool is_slow_enough = math::isInRange(_velocity(2), -1.f, 1.f)
-					    && !Vector2f(_velocity).longerThan(1.f);
+		const bool land_horizontal_only = _type == WaypointType::land && !_emergency_braking_vertical;
+		const bool takeoff_horizontal_only = _type == WaypointType::takeoff && !_emergency_braking_vertical;
+		const bool vertical_trajectory_preserved = land_horizontal_only || takeoff_horizontal_only;
 
-		// Track the lowest speed reached and deactivate emergency braking if it stops improving.
-		// Avoids getting stuck in emergency braking.
-		const float speed = math::max(fabsf(_velocity(2)), Vector2f(_velocity).norm());
+		// For horizontal-only braking while a takeoff/landing Z trajectory remains active, release
+		// based on XY speed only.
+		// Do not release on the no-progress timeout: that caused immediate re-triggering while still fast.
+		const bool is_slow_enough = vertical_trajectory_preserved ? !Vector2f(_velocity).longerThan(1.f)
+				: (math::isInRange(_velocity(2), -1.f, 1.f) && !Vector2f(_velocity).longerThan(1.f));
+
+		const float speed = vertical_trajectory_preserved ? Vector2f(_velocity).norm()
+				: math::max(fabsf(_velocity(2)), Vector2f(_velocity).norm());
 
 		if (speed < _emergency_braking_best_speed - 0.5f) {
 			_emergency_braking_best_speed = speed;
@@ -771,9 +810,15 @@ void FlightTaskAuto::_checkEmergencyBraking()
 		}
 
 		const bool is_not_slowing_down = _time_stamp_current > _emergency_braking_progress_timestamp + 3_s;
+		const bool dual_vtol_hover = _param_dvh_en.get() == 1 && _param_ca_airframe.get() == 9;
 
-		if (is_slow_enough || is_not_slowing_down) {
+		// Do not abandon braking on the dual-VTOL merely because it has not reduced
+		// speed by 0.5 m/s within three seconds. With low nacelle-tilt authority that
+		// timeout caused repeated brake/release cycles while the aircraft was still
+		// moving quickly. Stay in zero-velocity braking until speed is actually low.
+		if (is_slow_enough || (is_not_slowing_down && !vertical_trajectory_preserved && !dual_vtol_hover)) {
 			_is_emergency_braking_active = false;
+			_emergency_braking_vertical = false;
 
 			// Hand back a trajectory that ordinary guidance can take over. Emergency braking runs the smoother at
 			// 1g right up to the release, so its acceleration state is still around 9.8 m/s^2 while its
@@ -825,15 +870,38 @@ void FlightTaskAuto::_updateTrajConstraints()
 	_position_smoothing.setHorizontalTrajectoryGain(_param_mpc_xy_traj_p.get());
 	_position_smoothing.setTargetAcceptanceRadius(_target_acceptance_radius);
 
-	// Update the constraints of the trajectories
-	_position_smoothing.setMaxAccelerationXY(_param_mpc_acc_hor.get()); // TODO : Should be computed using heading
+	// Update the constraints of the trajectories. The dual-VTOL hover branch
+	// limits the body/thrust-vector tilt in PositionControl; keep the trajectory
+	// generator's horizontal acceleration envelope consistent with that limit.
+	const bool dual_vtol_hover = _param_dvh_en.get() == 1 && _param_ca_airframe.get() == 9;
+	float max_acceleration_xy = _param_mpc_acc_hor.get();
+
+	if (dual_vtol_hover) {
+		const float tilt_limit_rad = math::radians(_param_dvh_pos_tilt.get());
+		const float acceleration_from_tilt = CONSTANTS_ONE_G * tanf(tilt_limit_rad);
+		max_acceleration_xy = math::min(max_acceleration_xy, acceleration_from_tilt);
+	}
+
+	_position_smoothing.setMaxAccelerationXY(max_acceleration_xy); // TODO : Should be computed using heading
 	_position_smoothing.setMaxVelocityXY(_param_mpc_xy_vel_max.get());
 	_position_smoothing.setMaxJerk(_param_mpc_jerk_auto.get()); // TODO : Should be computed using heading
 
 	if (_is_emergency_braking_active) {
-		// When initializing with large velocity, allow 1g of
-		// acceleration in 1s on all axes for fast braking
-		_position_smoothing.setMaxAcceleration({CONSTANTS_ONE_G, CONSTANTS_ONE_G, CONSTANTS_ONE_G});
+		// Emergency braking must not request more horizontal acceleration than the
+		// dual-VTOL hover thrust-vector limit can physically provide. Other airframes
+		// retain the stock 1g emergency-braking behavior.
+		const float emergency_acceleration_xy = dual_vtol_hover ? max_acceleration_xy : CONSTANTS_ONE_G;
+
+		// When AUTO_LAND is braking only in XY, retain ordinary vertical descent limits.
+		if (_type == WaypointType::land && !_emergency_braking_vertical) {
+			_position_smoothing.setMaxAcceleration({emergency_acceleration_xy, emergency_acceleration_xy, _param_mpc_acc_down_max.get()});
+			_position_smoothing.setMaxVelocityZ(_param_mpc_z_v_auto_dn.get());
+			_position_smoothing.setMaxAccelerationZ(_param_mpc_acc_down_max.get());
+		} else {
+			// Other airframes retain 1g horizontally; dual-VTOL hover uses its
+			// achievable thrust-vector acceleration envelope. Vertical braking stays 1g.
+			_position_smoothing.setMaxAcceleration({emergency_acceleration_xy, emergency_acceleration_xy, CONSTANTS_ONE_G});
+		}
 		_position_smoothing.setMaxJerk(CONSTANTS_ONE_G);
 
 	} else if (_unsmoothed_velocity_setpoint(2) < 0.f) { // up

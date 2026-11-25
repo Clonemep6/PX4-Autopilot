@@ -6,6 +6,201 @@ __max_num_tilts: &max_num_tilts 4
 module_name: Control Allocation
 
 parameters:
+# BEGIN DUAL_VTOL_HOVER_PARAMETERS
+    - group: Dual VTOL Hover (SITL)
+      definitions:
+        DVH_EN:
+            description:
+                short: Enable experimental dual VTOL hover branch
+                long: |
+                  Use CA_AIRFRAME=9 and the 4500 SITL airframe. Requires restart.
+            type: enum
+            values:
+                0: Disabled
+                1: Enabled
+            default: 0
+            reboot_required: true
+        DVH_RUN:
+            description:
+                short: Allow automatic hover motor outputs
+                long: |
+                  Simulator-only test gate. Set while disarmed. Airframe resets this to zero every boot. Actuator tests bypass this gate.
+            type: enum
+            values:
+                0: Disabled
+                1: Enabled
+            default: 0
+        DVH_OMEGA_MAX:
+            description:
+                short: VTOL maximum commanded shaft speed
+                long: |
+                  Must match SIM_GZ_EC_MAX1 and MAX2; both minimum outputs must be zero.
+            type: float
+            min: 100
+            max: 1054.214
+            decimal: 5
+            default: 1000
+        DVH_ARM_L:
+            description:
+                short: Left hub lateral moment arm
+                long: |
+                  Positive magnitude in meters from center of mass.
+            type: float
+            min: 0.1
+            max: 10
+            decimal: 5
+            default: 1.33714025
+        DVH_ARM_R:
+            description:
+                short: Right hub lateral moment arm
+                long: |
+                  Positive magnitude in meters from center of mass.
+            type: float
+            min: 0.1
+            max: 10
+            decimal: 5
+            default: 1.33695575
+        DVH_PIV_X:
+            description:
+                short: Nacelle pivot x relative to center of mass
+                long: |
+                  Body FRD meters. Derived from the supplied model, not measured hardware.
+            type: float
+            min: -10
+            max: 10
+            decimal: 5
+            default: 0.02577691
+        DVH_PIV_Z:
+            description:
+                short: Nacelle pivot z relative to center of mass
+                long: |
+                  Body FRD meters. Uses pivot because shaft radial offset is parallel to thrust.
+            type: float
+            min: -10
+            max: 10
+            decimal: 5
+            default: 0.01250282
+        DVH_CY_P:
+            description:
+                short: Common cyclic pitch effectiveness
+                long: |
+                  Nm per N of rotor thrust per full normalized swash. Negative with the supplied joint conventions. Dynamic identification required.
+            type: float
+            min: -0.2
+            max: 0.2
+            decimal: 5
+            default: -0.06194
+        DVH_CY_R:
+            description:
+                short: Cyclic roll coupling on left rotor
+                long: |
+                  Nm per N per normalized swash. Mirrored right side uses opposite sign. Dynamic identification required.
+            type: float
+            min: -0.2
+            max: 0.2
+            decimal: 5
+            default: 0.02178
+        DVH_POS_TILT:
+            description:
+                short: Position-controller thrust vector angle cap
+                long: |
+                  Degrees. Applies only to this hover branch. Keep below the nacelle angle limit to retain yaw reserve.
+            type: float
+            min: 0.1
+            max: 10
+            decimal: 5
+            default: 5
+        DVH_TILT_MAX:
+            description:
+                short: Hover tilt angle limit in degrees
+                long: |
+                  Limit relative to the vertical shaft trim, not the physical joint zero.
+            type: float
+            min: 0.1
+            max: 29.9
+            decimal: 5
+            default: 10
+        DVH_TRIM_L:
+            description:
+                short: Left vertical shaft joint angle in radians
+                long: |
+                  Geometric value only; verify on the running model.
+            type: float
+            min: -1
+            max: 1
+            decimal: 5
+            default: -0.0534036732
+        DVH_TRIM_R:
+            description:
+                short: Right vertical shaft joint angle in radians
+                long: |
+                  Geometric value only; verify on the running model.
+            type: float
+            min: -1
+            max: 1
+            decimal: 5
+            default: -0.0534036732
+        DVH_TILT_RATE:
+            description:
+                short: Tilt command rate limit in radians per second
+                long: |
+                  Additional to mechanical and controller dynamics. Generic allocator slew must be zero.
+            type: float
+            min: 0.01
+            max: 1
+            decimal: 5
+            default: 0.3
+        DVH_CY_RATE:
+            description:
+                short: Cyclic command rate in normalized units per second
+                long: |
+                  Additional to the actual swash mechanism dynamics.
+            type: float
+            min: 0.01
+            max: 20
+            decimal: 5
+            default: 2
+        DVH_MX_SCALE:
+            description:
+                short: Roll torque at unit controller request
+                long: |
+                  Nm. Must be tuned together with the rate controller.
+            type: float
+            min: 0.02
+            max: 200
+            decimal: 5
+            default: 10
+        DVH_MY_SCALE:
+            description:
+                short: Pitch torque at unit controller request
+                long: |
+                  Nm. Must be tuned together with the rate controller.
+            type: float
+            min: 0.02
+            max: 100
+            decimal: 5
+            default: 2
+        DVH_MZ_SCALE:
+            description:
+                short: Yaw torque at unit controller request
+                long: |
+                  Nm. Must be tuned together with the rate controller.
+            type: float
+            min: 0.02
+            max: 200
+            decimal: 5
+            default: 10
+        DVH_IDLE_W:
+            description:
+                short: Armed idle shaft speed in radians per second
+                long: |
+                  Spools to this speed over COM_SPOOLUP_TIME. No measured blade-deployment feedback is included.
+            type: float
+            min: 0
+            max: 1000
+            decimal: 5
+            default: 400
+# END DUAL_VTOL_HOVER_PARAMETERS
     - group: Geometry
       definitions:
         CA_AIRFRAME:

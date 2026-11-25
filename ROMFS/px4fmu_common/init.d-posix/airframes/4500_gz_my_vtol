@@ -1,0 +1,185 @@
+#!/bin/sh
+#
+# @name Dual VTOL Cyclic Hover - experimental SITL only
+# @type Multicopter
+# @class Copter
+#
+# Hover-only prototype: not a VTOL transition/fixed-wing controller.
+# Keep all arming/estimator/failsafe checks. No automatic arming here.
+. ${R}etc/init.d/rc.mc_defaults
+PX4_SIMULATOR=${PX4_SIMULATOR:=gz}
+PX4_GZ_WORLD=${PX4_GZ_WORLD:=default}
+PX4_SIM_MODEL=${PX4_SIM_MODEL:=gz_my_vtol}
+
+# Interface/controller values below are intentionally enforced at every boot of
+# airframe 4500. Tuning parameters use set-default and can be adjusted separately.
+param set SIM_GZ_EN 1
+param set MAV_TYPE 2
+param set CA_AIRFRAME 9
+param set CA_METHOD 0
+param set DVH_EN 1
+param set DVH_RUN 0
+param set THR_MDL_FAC 0
+param set CA_R_REV 0
+param set CA_FAILURE_MODE 0
+param set CA_ROTOR_COUNT 3
+param set CA_SV_CS_COUNT 8
+param set DVH_OMEGA_MAX 1000
+
+# Three consecutive motor slots; rear is explicitly commanded zero by allocator.
+param set SIM_GZ_EC_FUNC1 101
+param set SIM_GZ_EC_FUNC2 102
+param set SIM_GZ_EC_FUNC3 103
+param set SIM_GZ_EC_MIN1 0
+param set SIM_GZ_EC_MIN2 0
+param set SIM_GZ_EC_MIN3 0
+param set SIM_GZ_EC_MAX1 1000
+param set SIM_GZ_EC_MAX2 1000
+param set SIM_GZ_EC_MAX3 875
+param set SIM_GZ_EC_DIS1 0
+param set SIM_GZ_EC_DIS2 0
+param set SIM_GZ_EC_DIS3 0
+param set SIM_GZ_EC_FAIL1 0
+param set SIM_GZ_EC_FAIL2 0
+param set SIM_GZ_EC_FAIL3 0
+param set CA_R0_SLEW 0
+param set CA_R1_SLEW 0
+param set CA_R2_SLEW 0
+
+# SDF topic servo_N corresponds to bridge slot N+1.
+param set SIM_GZ_SV_FUNC1 201
+param set SIM_GZ_SV_FUNC2 202
+param set SIM_GZ_SV_FUNC3 203
+param set SIM_GZ_SV_FUNC4 204
+param set SIM_GZ_SV_FUNC5 205
+param set SIM_GZ_SV_FUNC6 206
+param set SIM_GZ_SV_FUNC7 207
+param set SIM_GZ_SV_FUNC8 208
+param set SIM_GZ_SV_MINA1 -25.7831008
+param set SIM_GZ_SV_MAXA1 25.7831008
+param set SIM_GZ_SV_MINA2 -25.7831008
+param set SIM_GZ_SV_MAXA2 25.7831008
+param set SIM_GZ_SV_MINA3 -80
+param set SIM_GZ_SV_MAXA3 80
+param set SIM_GZ_SV_MINA4 -1.7990875
+param set SIM_GZ_SV_MAXA4 1.7990875
+param set SIM_GZ_SV_MINA5 -80
+param set SIM_GZ_SV_MAXA5 80
+param set SIM_GZ_SV_MINA6 -90
+param set SIM_GZ_SV_MAXA6 90
+param set SIM_GZ_SV_MINA7 -1.7990875
+param set SIM_GZ_SV_MAXA7 1.7990875
+param set SIM_GZ_SV_MINA8 -90
+param set SIM_GZ_SV_MAXA8 90
+param set SIM_GZ_SV_MIN1 0
+param set SIM_GZ_SV_MAX1 1000
+param set SIM_GZ_SV_MIN2 0
+param set SIM_GZ_SV_MAX2 1000
+param set SIM_GZ_SV_MIN3 0
+param set SIM_GZ_SV_MAX3 1000
+param set SIM_GZ_SV_MIN4 0
+param set SIM_GZ_SV_MAX4 1000
+param set SIM_GZ_SV_MIN5 0
+param set SIM_GZ_SV_MAX5 1000
+param set SIM_GZ_SV_MIN6 0
+param set SIM_GZ_SV_MAX6 1000
+param set SIM_GZ_SV_MIN7 0
+param set SIM_GZ_SV_MAX7 1000
+param set SIM_GZ_SV_MIN8 0
+param set SIM_GZ_SV_MAX8 1000
+param set CA_SV0_SLEW 0
+param set CA_SV1_SLEW 0
+param set CA_SV2_SLEW 0
+param set CA_SV3_SLEW 0
+param set CA_SV4_SLEW 0
+param set CA_SV5_SLEW 0
+param set CA_SV6_SLEW 0
+param set CA_SV7_SLEW 0
+param set SIM_GZ_SV_DIS1 500
+param set SIM_GZ_SV_DIS2 500
+param set SIM_GZ_SV_DIS3 500
+param set SIM_GZ_SV_DIS4 500
+param set SIM_GZ_SV_DIS5 500
+param set SIM_GZ_SV_DIS6 483
+param set SIM_GZ_SV_DIS7 500
+param set SIM_GZ_SV_DIS8 483
+
+# Initial simulator-only tuning ASSUMPTIONS, not a validated tune.
+# DVH_POS_TILT caps the position-controller force vector to 5 deg, below
+# the stock MPC_TILTMAX_AIR metadata minimum. It preserves extra yaw tilt.
+# Global vertical velocity caps constrain the nominal takeoff/landing speeds.
+param set-default COM_SPOOLUP_TIME 5
+param set-default MPC_TKO_RAMP_T 3
+param set-default MPC_THR_HOVER 0.364
+param set-default MPC_THR_MIN 0.05
+param set-default MPC_THR_MAX 0.75
+param set-default MPC_TILTMAX_AIR 20
+param set-default MPC_TILTMAX_LND 5
+param set-default MPC_XY_CRUISE 3
+param set-default MPC_XY_VEL_MAX 3
+param set-default MPC_VEL_MANUAL 3
+param set-default MPC_ACC_HOR 2
+param set-default MPC_ACC_HOR_MAX 2
+param set-default MPC_Z_VEL_MAX_UP 0.5
+param set-default MPC_Z_VEL_MAX_DN 0.5
+param set-default MPC_ACC_UP_MAX 2
+param set-default MPC_ACC_DOWN_MAX 2
+param set-default MPC_TKO_SPEED 1
+param set-default MPC_LAND_SPEED 0.6
+param set-default MPC_MAN_Y_MAX 15
+param set-default MPC_YAWRAUTO_MAX 15
+param set-default MIS_TAKEOFF_ALT 2
+param set-default MC_YAW_P 1
+param set-default MC_ROLLRATE_MAX 30
+param set-default MC_PITCHRATE_MAX 30
+param set-default MC_YAWRATE_MAX 20
+param set-default MC_ROLLRATE_D 0
+param set-default MC_PITCHRATE_D 0
+param set-default MC_YAWRATE_P 0.15
+param set-default MC_YAWRATE_I 0.02
+param set-default MC_YAWRATE_D 0
+param set-default MC_BAT_SCALE_EN 0
+param set-default DVH_TRIM_L -0.132
+param set-default DVH_TRIM_R -0.132
+param set-default DVH_CY_P -0.086
+param set-default EKF2_HGT_REF 0
+param set-default EKF2_BARO_CTRL 1
+param set-default EKF2_BARO_NOISE 0.3
+
+# ---- Position-hold tuning (model-based starting point, not flight-validated) ----
+# PX4 already runs the cascade you want:
+#   position error --(MPC_XY_P)--> velocity setpoint
+#   velocity error --(MPC_XY_VEL_P/I/D_ACC)--> acceleration setpoint
+#   acceleration --(thrust vector tilt, capped by DVH_POS_TILT)--> attitude setpoint
+#   attitude error --(MC_ROLL_P / MC_PITCH_P)--> rate setpoint --(MC_*RATE_*)--> torque
+# Each loop must be several times slower than the loop inside it. The stock quad
+# gains (MPC_XY_P 0.95, VEL_P 1.8, MC_ROLL_P 1.5 ...) are not: roll inertia is about
+# 1.07 kg m^2 and the rotor speed command has a 0.5 s / 0.25 s time constant (SDF),
+# so the roll rate loop tops out near 1 rad/s. Outer loops are slowed to match.
+# NOTE: MPC_XY_VEL_P_ACC (yaml min 1.2) is below its metadata minimum. Check with
+# `param show MPC_XY_VEL_P_ACC` after boot; if it was clamped, lower the min in
+# multicopter_position_control_gain_params.yaml and rebuild.
+param set-default MC_ROLL_P 0.5
+param set-default MC_ROLLRATE_P 0.20
+param set-default MC_ROLLRATE_I 0.01
+param set-default MC_PITCH_P 2.0
+param set-default MC_PITCHRATE_P 0.12
+param set-default MC_PITCHRATE_I 0.02
+param set-default MPC_XY_P 0.12
+param set-default MPC_XY_VEL_P_ACC 0.7
+param set-default MPC_XY_VEL_I_ACC 0.10
+param set-default MPC_XY_VEL_D_ACC 0.2
+param set-default MPC_Z_P 0.6
+param set-default MPC_Z_VEL_P_ACC 2.0
+param set-default MPC_Z_VEL_I_ACC 0.6
+param set-default HTE_THR_RANGE 0.03
+param set-default MPC_XY_CRUISE 1.0
+param set-default MPC_XY_VEL_MAX 1.5
+param set-default MPC_ACC_HOR 0.2
+param set-default MPC_ACC_HOR_MAX 0.2
+param set-default MPC_JERK_AUTO 0.3
+param set-default NAV_ACC_RAD 2.0
+param set-default MC_PR_INT_LIM 0.03
+
+echo "Dual VTOL hover prototype loaded: DVH_RUN=0 (automatic motor outputs inhibited)"
+echo "Rear pusher is OFF. No fixed-wing transition is implemented."
