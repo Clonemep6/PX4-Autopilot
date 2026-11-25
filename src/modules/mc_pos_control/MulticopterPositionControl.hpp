@@ -122,6 +122,11 @@ private:
 	float _vel_limit_down{NAN};
 	hrt_abstime _time_vel_limit_reset{0};
 
+	// SITL-only forward velocity setpoint commissioning. Does not command the pusher.
+	bool _dvt_velocity_active{false};
+	float _dvt_heading{0.f};
+	float _dvt_altitude{0.f};
+	float _dvt_speed{0.f};
 	trajectory_setpoint_s _setpoint{PositionControl::empty_trajectory_setpoint};
 	trajectory_setpoint_s _last_valid_setpoint{PositionControl::empty_trajectory_setpoint};
 	vehicle_control_mode_s _vehicle_control_mode{};
@@ -143,6 +148,8 @@ private:
 
 	DEFINE_PARAMETERS(
 		(ParamInt<px4::params::DVH_EN>) _param_dvh_en,
+		(ParamInt<px4::params::DVT_VEL_EN>) _param_dvt_vel_en,
+		(ParamInt<px4::params::DVT_FWD_REQ>) _param_dvt_fwd_req,
 		(ParamFloat<px4::params::DVH_POS_TILT>) _param_dvh_pos_tilt,
 		(ParamInt<px4::params::CA_AIRFRAME>) _param_dvh_ca_airframe,
 		// Position Control

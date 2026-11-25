@@ -64,6 +64,44 @@ parameters:
                 0: Disabled
                 1: Enabled
             default: 0
+        DVT_VEL_EN:
+            description:
+                short: Enable dual VTOL velocity commissioning (SITL only)
+                long: |
+                  Disabled by default. With DVT_FWD_REQ, captures current yaw
+                  and altitude and ramps forward velocity to 2 m/s. Does not
+                  command pusher or tilt. Cancellation decelerates to zero
+                  velocity hold; change flight mode to resume normal navigation.
+            type: enum
+            values:
+                0: Disabled
+                1: Enabled
+            default: 0
+        DVT_FWD_REQ:
+            description:
+                short: Request limited forward pusher commissioning (SITL)
+                long: |
+                  Defaults off. Ramps rear pusher only; DOES NOT disable XY
+                  position hold, command nacelle tilt, or implement transition.
+                  Test only with a restrained model. Requires DVT_EN and normal
+                  hover arming/spool gates. Zero cancels the request.
+            type: enum
+            values:
+                0: Disabled
+                1: Requested
+            default: 0
+        DVT_FWD_THR:
+            description:
+                short: Forward commissioning pusher target (SITL)
+                long: |
+                  Normalized pusher command, 0 to 0.15. Rate limited to
+                  0.03 per second when DVT_FWD_REQ is enabled. Invalid values
+                  fail closed for the request without disabling hover.
+            type: float
+            min: 0
+            max: 0.15
+            decimal: 3
+            default: 0
         DVH_OMEGA_MAX:
             description:
                 short: VTOL maximum commanded shaft speed

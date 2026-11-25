@@ -420,6 +420,11 @@ void MulticopterPositionControl::Run()
 		}
 
 		_vehicle_land_detected_sub.update(&_vehicle_land_detected);
+		if (!_vehicle_control_mode.flag_armed || !_vehicle_control_mode.flag_multicopter_position_control_enabled) {
+			_dvt_velocity_active = false;
+			_dvt_speed = 0.f;
+		}
+
 
 		if (_hover_thrust_estimate_sub.updated()) {
 			hover_thrust_estimate_s hte;
@@ -576,6 +581,49 @@ void MulticopterPositionControl::Run()
 			limit_speed_up = _takeoff.updateRamp(dt, limit_speed_up); // Takeoff ramp goes last to not be overridden
 
 			_control.setVelocityLimits(max_speed_xy, limit_speed_up, limit_speed_down);
+
+			// SITL commissioning: replace XY position hold with a bounded forward
+			// velocity setpoint. Keep the captured altitude and heading. Never
+			// activate on the ground or without a valid position estimate.
+			const bool dvt_requested = _param_dvt_vel_en.get() == 1
+						&& _param_dvt_fwd_req.get() == 1
+						&& _param_dvh_en.get() == 1
+						&& _vehicle_control_mode.flag_armed && flying
+						&& PX4_ISFINITE(states.yaw)
+						&& PX4_ISFINITE(states.position(2))
+						&& PX4_ISFINITE(states.velocity(0))
+						&& PX4_ISFINITE(states.velocity(1));
+
+			if (dvt_requested && !_dvt_velocity_active) {
+				_dvt_heading = states.yaw;
+				_dvt_altitude = states.position(2);
+				_dvt_speed = 0.f;
+				_dvt_velocity_active = true;
+			}
+
+			if (_dvt_velocity_active) {
+				if (dvt_requested) {
+					_dvt_speed = math::min(_dvt_speed + 0.5f * dt, 2.f);
+
+				} else {
+					_dvt_speed = math::max(_dvt_speed - 0.5f * dt, 0.f);
+				}
+
+				_setpoint.position[0] = NAN;
+				_setpoint.position[1] = NAN;
+				_setpoint.position[2] = _dvt_altitude;
+				_setpoint.velocity[0] = _dvt_speed * cosf(_dvt_heading);
+				_setpoint.velocity[1] = _dvt_speed * sinf(_dvt_heading);
+				_setpoint.velocity[2] = NAN;
+				_setpoint.acceleration[0] = NAN;
+				_setpoint.acceleration[1] = NAN;
+				_setpoint.acceleration[2] = NAN;
+				_setpoint.yaw = _dvt_heading;
+				_setpoint.yawspeed = NAN;
+
+				// On cancellation keep zero-velocity hold until the operator
+				// selects a new normal flight mode. Do not resume a stale XY target.
+			}
 
 			_control.setInputSetpoint(_setpoint);
 
